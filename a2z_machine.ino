@@ -6,19 +6,26 @@
  */
 #include <Adafruit_TinyUSB.h>
 #include <SPI.h>
+#include <SdFat.h>
 #include <Adafruit_SPIFlash.h>
-#include <Adafruit_SPIFlash_FatFs.h>
-#include "Adafruit_QSPI_Flash.h"
 #include <mcurses.h>
 #include "ztypes.h"
+
+// for flashTransport definition
+#include "flash_config.h"
+
+Adafruit_SPIFlash flash(&flashTransport);
+
+// file system object from SdFat
+FatVolume spiffs;
+
+// USB Mass Storage object
+Adafruit_USBD_MSC usb_msc;
 
 #define A2Z_VERSION "3.1"
 
 #define MAXFILELIST 50 // max. # of game files to display
 char **storyfilelist;
-
-Adafruit_QSPI_Flash flash;
-Adafruit_M0_Express_CircuitPython spiffs(flash);
 
 extern ztheme_t themes[];
 extern int themecount;
@@ -72,16 +79,18 @@ void filesort(char **a, int size) {
     }
 }
 
-char **getDirectory(Adafruit_SPIFlash_FAT::File dir)
+char **getDirectory(File32 dir)
 {
   static char filebuff[MAXFILELIST*32];
   char *filebuffptr = filebuff;
   static char* dirlist[MAXFILELIST]; // max file list size
   int dirlistcount = 0;
+  char namebuf[32];
 
   if(!dir.isDirectory())
   {
-    fatal(String("getDirectory(): not a valid folder / " + String(dir.name())).c_str());
+    (void)dir.getName(namebuf, sizeof namebuf);
+    fatal(String("getDirectory(): not a valid folder / " + String(namebuf)).c_str());
   }
 
   //clear previous filelist
@@ -91,7 +100,7 @@ char **getDirectory(Adafruit_SPIFlash_FAT::File dir)
   }
   while (true)
   {
-    Adafruit_SPIFlash_FAT::File entry = dir.openNextFile();
+    File32 entry = dir.openNextFile();
     if (! entry)
     {
       break;
@@ -99,8 +108,9 @@ char **getDirectory(Adafruit_SPIFlash_FAT::File dir)
     if (! entry.isDirectory())
     {
         dirlist[dirlistcount++] = filebuffptr;
-        strcpy(filebuffptr,entry.name());
-        filebuffptr += strlen(entry.name()) + 1;
+        (void)entry.getName(namebuf, sizeof namebuf);
+        strcpy(filebuffptr,namebuf);
+        filebuffptr += strlen(namebuf) + 1;
         if (dirlistcount > MAXFILELIST)
         {
            // no more files
@@ -430,16 +440,14 @@ static void configure( zbyte_t min_version, zbyte_t max_version )
 
 }
 
-Adafruit_USBD_MSC usb_msc;
-
 // Callback invoked when received READ10 command.
 // Copy disk's data to buffer (up to bufsize) and 
 // return number of copied bytes (must be multiple of block size) 
 int32_t msc_read_cb (uint32_t lba, void* buffer, uint32_t bufsize)
 {
-  const uint32_t addr = lba*512;
-  flash_cache_read((uint8_t*) buffer, addr, bufsize);
-  return bufsize;
+  // Note: SPIFLash Block API: readBlocks/writeBlocks/syncBlocks
+  // already include 4K sector caching internally. We don't need to cache it, yahhhh!!
+  return flash.readBlocks(lba, (uint8_t*) buffer, bufsize/512) ? bufsize : -1;
 }
 
 // Callback invoked when received WRITE10 command.
@@ -447,126 +455,27 @@ int32_t msc_read_cb (uint32_t lba, void* buffer, uint32_t bufsize)
 // return number of written bytes (must be multiple of block size)
 int32_t msc_write_cb (uint32_t lba, uint8_t* buffer, uint32_t bufsize)
 {
-  // need to erase & caching write back
-  const uint32_t addr = lba*512;
-  flash_cache_write(addr, buffer, bufsize);
-  return bufsize;
+  // Note: SPIFLash Block API: readBlocks/writeBlocks/syncBlocks
+  // already include 4K sector caching internally. We don't need to cache it, yahhhh!!
+  return flash.writeBlocks(lba, buffer, bufsize/512) ? bufsize : -1;
 }
 
 // Callback invoked when WRITE10 command is completed (status received and accepted by host).
 // used to flush any pending cache.
 void msc_flush_cb (void)
 {
-  flash_cache_flush();
-}
+  // sync with flash
+  flash.syncBlocks();
 
-//--------------------------------------------------------------------+
-// Flash Caching
-//--------------------------------------------------------------------+
-#define FLASH_CACHE_SIZE          4096        // must be a erasable page size
-#define FLASH_CACHE_INVALID_ADDR  0xffffffff
-
-uint32_t cache_addr = FLASH_CACHE_INVALID_ADDR;
-uint8_t  cache_buf[FLASH_CACHE_SIZE];
-
-static inline uint32_t page_addr_of (uint32_t addr)
-{
-  return addr & ~(FLASH_CACHE_SIZE - 1);
-}
-
-static inline uint32_t page_offset_of (uint32_t addr)
-{
-  return addr & (FLASH_CACHE_SIZE - 1);
-}
-
-void flash_cache_flush (void)
-{
-  if ( cache_addr == FLASH_CACHE_INVALID_ADDR ) return;
-
-  // indicator
-  digitalWrite(LED_BUILTIN, HIGH);
-
-  flash.eraseSector(cache_addr/FLASH_CACHE_SIZE);
-  flash.writeBuffer(cache_addr, cache_buf, FLASH_CACHE_SIZE);
-
-  digitalWrite(LED_BUILTIN, LOW);
-
-  cache_addr = FLASH_CACHE_INVALID_ADDR;
-}
-
-uint32_t flash_cache_write (uint32_t dst, void const * src, uint32_t len)
-{
-  uint8_t const * src8 = (uint8_t const *) src;
-  uint32_t remain = len;
-
-  // Program up to page boundary each loop
-  while ( remain )
-  {
-    uint32_t const page_addr = page_addr_of(dst);
-    uint32_t const offset = page_offset_of(dst);
-
-    uint32_t wr_bytes = FLASH_CACHE_SIZE - offset;
-    wr_bytes = min(remain, wr_bytes);
-
-    // Page changes, flush old and update new cache
-    if ( page_addr != cache_addr )
-    {
-      flash_cache_flush();
-      cache_addr = page_addr;
-
-      // read a whole page from flash
-      flash.readBuffer(page_addr, cache_buf, FLASH_CACHE_SIZE);
-    }
-
-    memcpy(cache_buf + offset, src8, wr_bytes);
-
-    // adjust for next run
-    src8 += wr_bytes;
-    remain -= wr_bytes;
-    dst += wr_bytes;
-  }
-
-  return len - remain;
-}
-
-void flash_cache_read (uint8_t* dst, uint32_t addr, uint32_t count)
-{
-  // overwrite with cache value if available
-  if ( (cache_addr != FLASH_CACHE_INVALID_ADDR) &&
-       !(addr < cache_addr && addr + count <= cache_addr) &&
-       !(addr >= cache_addr + FLASH_CACHE_SIZE) )
-  {
-    int dst_off = cache_addr - addr;
-    int src_off = 0;
-
-    if ( dst_off < 0 )
-    {
-      src_off = -dst_off;
-      dst_off = 0;
-    }
-
-    int cache_bytes = min(FLASH_CACHE_SIZE-src_off, count - dst_off);
-
-    // start to cached
-    if ( dst_off ) flash.readBuffer(addr, dst, dst_off);
-
-    // cached
-    memcpy(dst + dst_off, cache_buf + src_off, cache_bytes);
-
-    // cached to end
-    int copied = dst_off + cache_bytes;
-    if ( copied < count ) flash.readBuffer(addr + copied, dst + copied, count - copied);
-  }
-  else
-  {
-    flash.readBuffer(addr, dst, count);
-  }
+  // clear file system's cache to force refresh
+  spiffs.cacheClear();
 }
 
 void setup()
 {
-  flash.begin();
   pinMode(LEDPIN, OUTPUT);
+  flash.begin();
+
   // Set disk vendor id, product id and revision with string up to 8, 16, 4 characters respectively
   usb_msc.setID("Adafruit", "A2Z Machine", "1.0");
 
@@ -574,21 +483,20 @@ void setup()
   usb_msc.setReadWriteCallback(msc_read_cb, msc_write_cb, msc_flush_cb);
 
   // Set disk size, block size should be 512 regardless of spi flash page size
-  usb_msc.setCapacity(flash.pageSize()*flash.numPages()/512, 512);
+  usb_msc.setCapacity(flash.size()/512, 512);
 
   // MSC is ready for read/write
   usb_msc.setUnitReady(true);
-  
+
   usb_msc.begin();
 
   Serial.begin(9600);
   while (!Serial) {
-  }  
- 
-  if (!spiffs.begin()) {
-    fatal("Failed to mount filesystem, was CircuitPython loaded onto the board?");
   }
 
+  if (!spiffs.begin(&flash)) {
+    fatal("Failed to mount filesystem, was CircuitPython loaded onto the board?");
+  }
 }
 
 void loop()
@@ -615,4 +523,3 @@ void loop()
   close_script(  );
   reset_screen(  );
 }
-

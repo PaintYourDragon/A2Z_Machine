@@ -33,25 +33,24 @@
 
 #include <SPI.h>
 #include <Adafruit_SPIFlash.h>
-#include <Adafruit_SPIFlash_FatFs.h>
 
 #include "ztypes.h"
 #include "jzexe.h"              /* mol 951115 */
 
-extern Adafruit_M0_Express_CircuitPython spiffs;
+extern FatVolume spiffs;
 
 /* Static data */
 
 extern int GLOBALVER;
 
 #ifdef USE_ZLIB
-static gzFile *gfp = NULL;      /* Zcode file pointer */
+static gzFile *gfp = NULL; /* Zcode file pointer */
 #else
-static Adafruit_SPIFlash_FAT::File gfp;        /* Zcode file pointer */
+static File32 gfp;         /* Zcode file pointer */
 #endif
 
-static Adafruit_SPIFlash_FAT::File sfp;        /* Script file pointer */
-static Adafruit_SPIFlash_FAT::File rfp;        /* Record file pointer */
+static File32 sfp;         /* Script file pointer */
+static File32 rfp;         /* Record file pointer */
 
 #if defined BUFFER_FILES        
 #ifndef USE_ZLIB
@@ -542,7 +541,7 @@ int z_save( int argc, zword_t table, zword_t bytes, zword_t name )
 {
    char new_name[Z_FILENAME_MAX + Z_PATHNAME_MAX + 1];
    char default_name[Z_FILENAME_MAX + Z_PATHNAME_MAX + 1];
-   Adafruit_SPIFlash_FAT::File afp;
+   File32 afp;
 
 #if defined BUFFER_FILES        
    char afpbuffer[BUFSIZ];      
@@ -629,7 +628,7 @@ int z_restore( int argc, zword_t table, zword_t bytes, zword_t name )
 {
    char new_name[Z_FILENAME_MAX + Z_PATHNAME_MAX + 1];
    char default_name[Z_FILENAME_MAX + Z_PATHNAME_MAX + 1];
-   Adafruit_SPIFlash_FAT::File afp;
+   File32 afp;
 
 #if defined BUFFER_FILES        
    char afpbuffer[BUFSIZ];      
@@ -658,7 +657,6 @@ int z_restore( int argc, zword_t table, zword_t bytes, zword_t name )
 #endif 
 
       status = afp.read( datap + table, bytes );
-
       afp.close();
 
       if ( status != 0 )
@@ -815,7 +813,7 @@ void swap_bytes( zword_t * ptr, int len )
 
 static int save_restore( const char *file_name, int flag )
 {
-   Adafruit_SPIFlash_FAT::File tfp;
+   File32 tfp;
 
 #if defined BUFFER_FILES        
    char tfpbuffer[BUFSIZ];      
@@ -1294,10 +1292,9 @@ void record_key( int c )
 void close_record( void )
 {
    /* Close recording file */
-   if ( rfp != NULL )
+   if ( rfp )
    {
       rfp.close();
-      rfp = NULL;
 
       /* Cleanup */
 
@@ -1346,7 +1343,7 @@ void z_input_stream( int arg )
          rfp = spiffs.open( new_record_name, FILE_READ );
 
          /* Turn on recording if open succeeded */
-         if ( rfp != NULL )
+         if ( rfp )
          {
 #if defined BUFFER_FILES        
             setbuf( rfp, rfpbuffer ); 

@@ -45,7 +45,7 @@
 
 extern int GLOBALVER;
 
-static void configure( zbyte_t, zbyte_t );
+static void _configure( zbyte_t, zbyte_t );
 
 /*
  * main
@@ -57,7 +57,7 @@ int _main( int argc, char *argv[] )
 {
    process_arguments( argc, argv );
 
-   configure( V1, V8 );
+   _configure( V1, V8 );
 
    initialize_screen(  );
 

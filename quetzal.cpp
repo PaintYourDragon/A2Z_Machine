@@ -77,7 +77,7 @@ zbyte_t diskcache[DISKCACHE_SIZE];
 int diskcachepos = 0;
 
 // the disk cache speeds up writing to flash drive
-bool flush_diskcache(File &fp)
+bool flush_diskcache(File32 &fp)
 {
   if(diskcachepos > 0)
   {
@@ -88,12 +88,12 @@ bool flush_diskcache(File &fp)
   return true;
 }
 
-uint32_t get_diskcache_position(File &fp)
+uint32_t get_diskcache_position(File32 &fp)
 {
   return fp.position() + diskcachepos;
 }
 
-bool write_byte(File &fp, zbyte_t b)
+bool write_byte(File32 &fp, zbyte_t b)
 {
   diskcache[diskcachepos++] = b;
   if(diskcachepos >= DISKCACHE_SIZE)
@@ -112,7 +112,7 @@ bool write_byte(File &fp, zbyte_t b)
 #ifdef USE_ZLIB
 int save_quetzal( FILE * sfp, gzFile * gfp )
 #else
-int save_quetzal( File &sfp, File &gfp )
+int save_quetzal( File32 &sfp, File32 &gfp )
 #endif
 {
    ul_t ifzslen = 0, cmemlen = 0, stkslen = 0, tmp_pc;
@@ -289,7 +289,7 @@ int save_quetzal( File &sfp, File &gfp )
  * attempt to read a word; return TRUE on success
  */
 
-static int read_word( File &fp, zword_t * result )
+static int read_word( File32 &fp, zword_t * result )
 {
    int a, b;
 
@@ -306,7 +306,7 @@ static int read_word( File &fp, zword_t * result )
  * attempt to read a longword; return TRUE on success
  */
 
-static int read_long( File &fp, ul_t * result )
+static int read_long( File32 &fp, ul_t * result )
 {
    int a, b, c, d;
 
@@ -340,7 +340,7 @@ static int read_long( File &fp, ul_t * result )
 #ifdef USE_ZLIB
 int restore_quetzal( FILE * sfp, gzFile * gfp )
 #else
-int restore_quetzal( File &sfp, File &gfp )
+int restore_quetzal( File32 &sfp, File32 &gfp )
 #endif
 {
    ul_t ifzslen, currlen, tmpl, skip = 0; 
@@ -353,12 +353,13 @@ int restore_quetzal( File &sfp, File &gfp )
       return FALSE;
    if ( !read_long( sfp, &currlen ) )
       return FALSE;
-      
+
    if ( tmpl != ID_FORM || currlen != ID_IFZS )
    {
       output_line( "This is not a saved game file!" );
       return FALSE;
    }
+
    if ( ( ifzslen & 1 ) || ifzslen < 4 )
       return FALSE;
    ifzslen -= 4;
@@ -461,7 +462,6 @@ int restore_quetzal( File &sfp, File &gfp )
                /* read result variable  */
                if ( ( x = sfp.read() ) == -1 )
                   return FALSE;
-
                if ( tmpl & 0x10 )
                {
                   tmpw |= PROCEDURE;

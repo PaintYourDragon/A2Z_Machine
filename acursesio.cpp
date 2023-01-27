@@ -69,7 +69,7 @@ static ZINT16 current_bg;
 extern ZINT16 default_fg;
 extern ZINT16 default_bg;
 
-static void display_string( char * );
+static void display_string( const char * );
 static int read_char( int timeout );
 
 void Arduino_putchar(uint8_t c)
@@ -105,7 +105,8 @@ static int inc( uint32_t timeout = 0 )
 static int uninc( int c )
 {
     // not supported right now
-   //return ungetc( c, stdin );
+    //return ungetc( c, stdin );
+    return 0; // int function must return SOMETHING
 }
 
 static int outc( int c )
@@ -327,7 +328,7 @@ void set_attribute( int attribute )
 
 }                               /* set_attribute */
 
-static void display_string( char *s )
+static void display_string( const char *s )
 {
    while ( *s )
       display_char( *s++ );

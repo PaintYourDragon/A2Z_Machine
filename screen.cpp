@@ -455,7 +455,7 @@ void output_new_line( void )
                row = min(row,DEFAULT_ROWS);
 
                output_string( "[MORE]" );clear_line();
-               inc(0,false);
+//               inc(0,false);
                move_cursor( row-1, col );
                move_cursor( row, col );
             }
