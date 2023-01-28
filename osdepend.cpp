@@ -97,7 +97,7 @@ extern ZINT16 default_fg, default_bg;
 int iPalette;                   
 #endif 
 
-
+extern FatVolume spiffs;
 
 #if !defined(AMIGA)
 
@@ -188,7 +188,7 @@ void process_arguments( int argc, char *argv[] )
 #endif 
          case 'v':             /* version information */
 
-            fprintf( stdout, "\nJZIP - An Infocom Z-code Interpreter Program \n" );
+            fprintf( stdout, "\nJZIP - An Infocom Z-code Interpreter Program\n" );
             fprintf( stdout, "       %s %s\n", JZIPVER, JZIPRELDATE );
             if ( STANDALONE_FLAG )
             {
@@ -219,7 +219,7 @@ void process_arguments( int argc, char *argv[] )
             default_bg = atoi( optarg );
             break;
 #endif
-#if defined OS2 || defined __MSDOS__ 
+#if defined OS2 || defined __MSDOS__
          case 'm':             /* monochrome */
             iPalette = 2;       
             break;              
@@ -493,23 +493,26 @@ int get_file_name( char *file_name, char *default_name, int flag )
 
    if ( flag == GAME_SAVE || flag == GAME_SCRIPT || flag == GAME_RECORD || flag == GAME_SAVE_AUX )
    {
-      FILE *tfp;
-
-#if defined BUFFER_FILES        
+//      FILE *tfp;
+      File32 tfp;
+#if defined BUFFER_FILES
       char tfpbuffer[BUFSIZ];   
-#endif 
+#endif
       char c;
 
       /* Try to access the file */
 
-      tfp = fopen( file_name, "r" );
-      if ( tfp != NULL )
+      char full_name[Z_FILENAME_MAX + Z_PATHNAME_MAX + 1];
+      sprintf(full_name, "%s/%s", SAVEPATH, file_name);
+
+      tfp = spiffs.open( full_name, FILE_READ );
+      if ( tfp )
       {
          /* If it succeeded then prompt to overwrite */
 
-#if defined BUFFER_FILES        
+#if defined BUFFER_FILES
          setbuf( tfp, tfpbuffer ); 
-#endif 
+#endif
 
          output_line( "You are about to write over an existing file." );
          output_string( "Proceed? (Y/N) " );
@@ -529,7 +532,7 @@ int get_file_name( char *file_name, char *default_name, int flag )
          if ( c == 'N' )
             status = 1;
 
-         fclose( tfp );
+          tfp.close();
       }
    }
 #endif /* !defined(VMS) */
